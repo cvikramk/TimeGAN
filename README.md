@@ -2,7 +2,7 @@
 
 This project has been forked from Jinsung Yoon's TimeGAN repository to work with human motion capture sequences. 
 The goal is to create a trajectory of joint angles that can be adapted to bipedal walks for robots.
-
+![Walk Sequences](collage_cropped.png)
 # Codebase for "Time-series Generative Adversarial Networks (TimeGAN)"
 
 Authors: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar
