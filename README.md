@@ -1,3 +1,8 @@
+# TimeGAN for generating human motion capture sequences for bipedal walk
+
+This project has been forked from Jinsung Yoon's TimeGAN repository to work with human motion capture sequences. 
+The goal is to create a trajectory of joint angles that can be adapted to bipedal walks for robots.
+
 # Codebase for "Time-series Generative Adversarial Networks (TimeGAN)"
 
 Authors: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar
@@ -22,6 +27,7 @@ python3 -m main_timegan.py or see jupyter-notebook tutorial of TimeGAN in tutori
 
 Note that any model architecture can be used as the generator and 
 discriminator model such as RNNs or Transformers. 
+
 
 ### Code explanation
 
@@ -62,9 +68,9 @@ Note that network parameters should be optimized for different datasets.
 ### Example command
 
 ```shell
-$ python3 main_timegan.py --data_name stock --seq_len 24 --module gru
---hidden_dim 24 --num_layer 3 --iteration 50000 --batch_size 128 
---metric_iteration 10
+$ python3 main_timegan.py --data_name mocap_strict 
+--seq_len 30 --module gru --hidden_dim 24 --num_layer 5
+--iteration 100 --batch_size 128
 ```
 
 ### Outputs
@@ -73,3 +79,4 @@ $ python3 main_timegan.py --data_name stock --seq_len 24 --module gru
 -   generated_data: generated synthetic data
 -   metric_results: discriminative and predictive scores
 -   visualization: PCA and tSNE analysis
+-   target motion capture results
