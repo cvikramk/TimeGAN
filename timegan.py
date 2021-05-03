@@ -18,13 +18,11 @@ Note: Use original data as training set to generater synthetic data (time-series
 
 # Necessary Packages
 import tensorflow as tf
-tf.compat.v1.disable_eager_execution()
-
 import numpy as np
 from utils import extract_time, rnn_cell, random_generator, batch_generator
 
 
-def timegan (ori_data, parameters):
+def timegan (ori_data, parameters,min_val,max_val):
   """TimeGAN function.
   
   Use original data as training set to generater synthetic data (time-series)
@@ -37,35 +35,15 @@ def timegan (ori_data, parameters):
     - generated_data: generated time-series data
   """
   # Initialization on the Graph
-  tf.compat.v1.reset_default_graph()
+  tf.reset_default_graph()
 
-  # Basic Parameters
-  no, seq_len, dim = np.asarray(ori_data).shape
+
+  no, seq_len, dim = np.array(ori_data).shape
     
   # Maximum sequence length and each sequence length
   ori_time, max_seq_len = extract_time(ori_data)
   
-  def MinMaxScaler(data):
-    """Min-Max Normalizer.
-    
-    Args:
-      - data: raw data
-      
-    Returns:
-      - norm_data: normalized data
-      - min_val: minimum values (for renormalization)
-      - max_val: maximum values (for renormalization)
-    """    
-    min_val = np.min(np.min(data, axis = 0), axis = 0)
-    data = data - min_val
-      
-    max_val = np.max(np.max(data, axis = 0), axis = 0)
-    norm_data = data / (max_val + 1e-7)
-      
-    return norm_data, min_val, max_val
-  
-  # Normalization
-  ori_data, min_val, max_val = MinMaxScaler(ori_data)
+
               
   ## Build a RNN networks          
   
@@ -79,9 +57,9 @@ def timegan (ori_data, parameters):
   gamma        = 1
     
   # Input place holders
-  X = tf.compat.v1.placeholder(tf.float32, [None, max_seq_len, dim], name = "myinput_x")
-  Z = tf.compat.v1.placeholder(tf.float32, [None, max_seq_len, z_dim], name = "myinput_z")
-  T = tf.compat.v1.placeholder(tf.int32, [None], name = "myinput_t")
+  X = tf.placeholder(tf.float32, [None, max_seq_len, dim], name = "myinput_x")
+  Z = tf.placeholder(tf.float32, [None, max_seq_len, z_dim], name = "myinput_z")
+  T = tf.placeholder(tf.int32, [None], name = "myinput_t")
   
   def embedder (X, T):
     """Embedding network between original feature space to latent space.
@@ -93,13 +71,10 @@ def timegan (ori_data, parameters):
     Returns:
       - H: embeddings
     """
-    with tf.compat.v1.variable_scope("embedder", reuse = tf.compat.v1.AUTO_REUSE):
-      e_cell = tf.keras.layers.StackedRNNCells([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
-      e_rnn = tf.keras.layers.RNN(e_cell,return_sequences=True)
-      e_outputs = e_rnn(X)
-      e_dense = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
-      H = e_dense(e_outputs)
-
+    with tf.variable_scope("embedder", reuse = tf.AUTO_REUSE):
+      e_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
+      e_outputs, e_last_states = tf.nn.dynamic_rnn(e_cell, X, dtype=tf.float32, sequence_length = T)
+      H = tf.contrib.layers.fully_connected(e_outputs, hidden_dim, activation_fn=tf.nn.sigmoid)     
     return H
       
   def recovery (H, T):   
@@ -112,13 +87,10 @@ def timegan (ori_data, parameters):
     Returns:
       - X_tilde: recovered data
     """     
-    with tf.compat.v1.variable_scope("recovery", reuse = tf.compat.v1.AUTO_REUSE):       
-      r_cell = tf.keras.layers.StackedRNNCells([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
-      r_rnn = tf.keras.layers.RNN(r_cell,return_sequences=True)
-      r_outputs = r_rnn(H)
-      r_dense = tf.keras.layers.Dense(dim, activation='sigmoid')
-      X_tilde = r_dense(r_outputs)
-
+    with tf.variable_scope("recovery", reuse = tf.AUTO_REUSE):       
+      r_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
+      r_outputs, r_last_states = tf.nn.dynamic_rnn(r_cell, H, dtype=tf.float32, sequence_length = T)
+      X_tilde = tf.contrib.layers.fully_connected(r_outputs, dim, activation_fn=tf.nn.sigmoid) 
     return X_tilde
     
   def generator (Z, T):  
@@ -131,13 +103,10 @@ def timegan (ori_data, parameters):
     Returns:
       - E: generated embedding
     """        
-    with tf.compat.v1.variable_scope("generator", reuse = tf.compat.v1.AUTO_REUSE):
-      e_cell = tf.keras.layers.StackedRNNCells([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
-      e_rnn = tf.keras.layers.RNN(e_cell, return_sequences=True)
-      e_outputs = e_rnn(Z)
-      e_dense = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
-      E = e_dense(e_outputs)
-  
+    with tf.variable_scope("generator", reuse = tf.AUTO_REUSE):
+      e_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
+      e_outputs, e_last_states = tf.nn.dynamic_rnn(e_cell, Z, dtype=tf.float32, sequence_length = T)
+      E = tf.contrib.layers.fully_connected(e_outputs, hidden_dim, activation_fn=tf.nn.sigmoid)     
     return E
       
   def supervisor (H, T): 
@@ -150,13 +119,10 @@ def timegan (ori_data, parameters):
     Returns:
       - S: generated sequence based on the latent representations generated by the generator
     """          
-    with tf.compat.v1.variable_scope("supervisor", reuse = tf.compat.v1.AUTO_REUSE):
-      e_cell = tf.keras.layers.StackedRNNCells([rnn_cell(module_name, hidden_dim) for _ in range(num_layers-1)])
-      e_rnn = tf.keras.layers.RNN(e_cell, return_sequences=True)
-      e_outputs = e_rnn(H)
-      e_dense = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
-      S = e_dense(e_outputs)
-    
+    with tf.variable_scope("supervisor", reuse = tf.AUTO_REUSE):
+      e_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name, hidden_dim) for _ in range(num_layers-1)])
+      e_outputs, e_last_states = tf.nn.dynamic_rnn(e_cell, H, dtype=tf.float32, sequence_length = T)
+      S = tf.contrib.layers.fully_connected(e_outputs, hidden_dim, activation_fn=tf.nn.sigmoid)     
     return S
           
   def discriminator (H, T):
@@ -169,15 +135,24 @@ def timegan (ori_data, parameters):
     Returns:
       - Y_hat: classification results between original and synthetic time-series
     """        
-    with tf.compat.v1.variable_scope("discriminator", reuse = tf.compat.v1.AUTO_REUSE):
-      d_cell = tf.keras.layers.StackedRNNCells([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
-      d_rnn = tf.keras.layers.RNN(d_cell, return_sequences=True)
-      d_outputs = d_rnn(H)
-      d_dense = tf.keras.layers.Dense(1, activation=None)
-      Y_hat = d_dense(d_outputs)
-
+    with tf.variable_scope("discriminator", reuse = tf.AUTO_REUSE):
+      d_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell(module_name, hidden_dim) for _ in range(num_layers)])
+      d_outputs, d_last_states = tf.nn.dynamic_rnn(d_cell, H, dtype=tf.float32, sequence_length = T)
+      Y_hat = tf.contrib.layers.fully_connected(d_outputs, 1, activation_fn=None) 
     return Y_hat   
-    
+  
+  def random_generator_with_start(batch_size, z_dim, T_mb, max_seq_len,ori_data):
+    idx = np.random.permutation(len(ori_data))    
+    Z_mb = list()
+    for i in range(batch_size):
+      temp = np.zeros([max_seq_len, z_dim])
+      start_state = ori_data[idx[i]][0]
+      temp_Z = np.random.uniform(0., 1, [T_mb[i]-1, z_dim])
+      temp_Z = np.vstack([start_state,temp_Z])
+      temp[:T_mb[i],:] = temp_Z
+      Z_mb.append(temp_Z)
+    return Z_mb
+
   # Embedder & Recovery
   H = embedder(X, T)
   X_tilde = recovery(H, T)
@@ -196,25 +171,25 @@ def timegan (ori_data, parameters):
   Y_fake_e = discriminator(E_hat, T)
     
   # Variables        
-  e_vars = [v for v in tf.compat.v1.trainable_variables() if v.name.startswith('embedder')]
-  r_vars = [v for v in tf.compat.v1.trainable_variables() if v.name.startswith('recovery')]
-  g_vars = [v for v in tf.compat.v1.trainable_variables() if v.name.startswith('generator')]
-  s_vars = [v for v in tf.compat.v1.trainable_variables() if v.name.startswith('supervisor')]
-  d_vars = [v for v in tf.compat.v1.trainable_variables() if v.name.startswith('discriminator')]
+  e_vars = [v for v in tf.trainable_variables() if v.name.startswith('embedder')]
+  r_vars = [v for v in tf.trainable_variables() if v.name.startswith('recovery')]
+  g_vars = [v for v in tf.trainable_variables() if v.name.startswith('generator')]
+  s_vars = [v for v in tf.trainable_variables() if v.name.startswith('supervisor')]
+  d_vars = [v for v in tf.trainable_variables() if v.name.startswith('discriminator')]
     
   # Discriminator loss
-  D_loss_real = tf.compat.v1.losses.sigmoid_cross_entropy(tf.ones_like(Y_real), Y_real)
-  D_loss_fake = tf.compat.v1.losses.sigmoid_cross_entropy(tf.zeros_like(Y_fake), Y_fake)
-  D_loss_fake_e = tf.compat.v1.losses.sigmoid_cross_entropy(tf.zeros_like(Y_fake_e), Y_fake_e)
+  D_loss_real = tf.losses.sigmoid_cross_entropy(tf.ones_like(Y_real), Y_real)
+  D_loss_fake = tf.losses.sigmoid_cross_entropy(tf.zeros_like(Y_fake), Y_fake)
+  D_loss_fake_e = tf.losses.sigmoid_cross_entropy(tf.zeros_like(Y_fake_e), Y_fake_e)
   D_loss = D_loss_real + D_loss_fake + gamma * D_loss_fake_e
             
   # Generator loss
   # 1. Adversarial loss
-  G_loss_U = tf.compat.v1.losses.sigmoid_cross_entropy(tf.ones_like(Y_fake), Y_fake)
-  G_loss_U_e = tf.compat.v1.losses.sigmoid_cross_entropy(tf.ones_like(Y_fake_e), Y_fake_e)
+  G_loss_U = tf.losses.sigmoid_cross_entropy(tf.ones_like(Y_fake), Y_fake)
+  G_loss_U_e = tf.losses.sigmoid_cross_entropy(tf.ones_like(Y_fake_e), Y_fake_e)
     
   # 2. Supervised loss
-  G_loss_S = tf.compat.v1.losses.mean_squared_error(H[:,1:,:], H_hat_supervise[:,:-1,:])
+  G_loss_S = tf.losses.mean_squared_error(H[:,1:,:], H_hat_supervise[:,:-1,:])
     
   # 3. Two Momments
   G_loss_V1 = tf.reduce_mean(tf.abs(tf.sqrt(tf.nn.moments(X_hat,[0])[1] + 1e-6) - tf.sqrt(tf.nn.moments(X,[0])[1] + 1e-6)))
@@ -226,20 +201,21 @@ def timegan (ori_data, parameters):
   G_loss = G_loss_U + gamma * G_loss_U_e + 100 * tf.sqrt(G_loss_S) + 100*G_loss_V 
             
   # Embedder network loss
-  E_loss_T0 = tf.compat.v1.losses.mean_squared_error(X, X_tilde)
+  E_loss_T0 = tf.losses.mean_squared_error(X, X_tilde)
   E_loss0 = 10*tf.sqrt(E_loss_T0)
   E_loss = E_loss0  + 0.1*G_loss_S
     
   # optimizer
-  E0_solver = tf.compat.v1.train.AdamOptimizer().minimize(E_loss0, var_list = e_vars + r_vars)
-  E_solver = tf.compat.v1.train.AdamOptimizer().minimize(E_loss, var_list = e_vars + r_vars)
-  D_solver = tf.compat.v1.train.AdamOptimizer().minimize(D_loss, var_list = d_vars)
-  G_solver = tf.compat.v1.train.AdamOptimizer().minimize(G_loss, var_list = g_vars + s_vars)      
-  GS_solver = tf.compat.v1.train.AdamOptimizer().minimize(G_loss_S, var_list = g_vars + s_vars)   
+  E0_solver = tf.train.AdamOptimizer().minimize(E_loss0, var_list = e_vars + r_vars)
+  E_solver = tf.train.AdamOptimizer().minimize(E_loss, var_list = e_vars + r_vars)
+  D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list = d_vars)
+  G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list = g_vars + s_vars)      
+  GS_solver = tf.train.AdamOptimizer().minimize(G_loss_S, var_list = g_vars + s_vars)   
         
-  ## TimeGAN training   
-  sess = tf.compat.v1.Session()
-  sess.run(tf.compat.v1.global_variables_initializer())
+  ## TimeGAN training
+  saver = tf.train.Saver(max_to_keep=50)
+  sess = tf.Session()
+  sess.run(tf.global_variables_initializer())
     
   # 1. Embedding network training
   print('Start Embedding Network Training')
@@ -252,7 +228,7 @@ def timegan (ori_data, parameters):
     # Checkpoint
     if itt % 1000 == 0:
       print('step: '+ str(itt) + '/' + str(iterations) + ', e_loss: ' + str(np.round(np.sqrt(step_e_loss),4)) ) 
-      
+  print('step: '+ str(itt) + '/' + str(iterations) + ', e_loss: ' + str(np.round(np.sqrt(step_e_loss),4)) ) 
   print('Finish Embedding Network Training')
     
   # 2. Training only with supervised loss
@@ -262,15 +238,15 @@ def timegan (ori_data, parameters):
     # Set mini-batch
     X_mb, T_mb = batch_generator(ori_data, ori_time, batch_size)    
     # Random vector generation   
-    Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
+    Z_mb = random_generator_with_start(batch_size, z_dim, T_mb, max_seq_len,ori_data)
     # Train generator       
     _, step_g_loss_s = sess.run([GS_solver, G_loss_S], feed_dict={Z: Z_mb, X: X_mb, T: T_mb})       
     # Checkpoint
     if itt % 1000 == 0:
       print('step: '+ str(itt)  + '/' + str(iterations) +', s_loss: ' + str(np.round(np.sqrt(step_g_loss_s),4)) )
-      
+  print('step: '+ str(itt)  + '/' + str(iterations) +', s_loss: ' + str(np.round(np.sqrt(step_g_loss_s),4)) )   
   print('Finish Training with Supervised Loss Only')
-    
+  
   # 3. Joint Training
   print('Start Joint Training')
   
@@ -280,7 +256,7 @@ def timegan (ori_data, parameters):
       # Set mini-batch
       X_mb, T_mb = batch_generator(ori_data, ori_time, batch_size)               
       # Random vector generation
-      Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
+      Z_mb = random_generator_with_start(batch_size, z_dim, T_mb, max_seq_len,ori_data)
       # Train generator
       _, step_g_loss_u, step_g_loss_s, step_g_loss_v = sess.run([G_solver, G_loss_U, G_loss_S, G_loss_V], feed_dict={Z: Z_mb, X: X_mb, T: T_mb})
        # Train embedder        
@@ -290,7 +266,7 @@ def timegan (ori_data, parameters):
     # Set mini-batch
     X_mb, T_mb = batch_generator(ori_data, ori_time, batch_size)           
     # Random vector generation
-    Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
+    Z_mb = random_generator_with_start(batch_size, z_dim, T_mb, max_seq_len,ori_data)
     # Check discriminator loss before updating
     check_d_loss = sess.run(D_loss, feed_dict={X: X_mb, T: T_mb, Z: Z_mb})
     # Train discriminator (only when the discriminator does not work well)
@@ -298,17 +274,26 @@ def timegan (ori_data, parameters):
       _, step_d_loss = sess.run([D_solver, D_loss], feed_dict={X: X_mb, T: T_mb, Z: Z_mb})
         
     # Print multiple checkpoints
-    if itt % 1000 == 0:
+    if itt % 5 == 0:
       print('step: '+ str(itt) + '/' + str(iterations) + 
             ', d_loss: ' + str(np.round(step_d_loss,4)) + 
             ', g_loss_u: ' + str(np.round(step_g_loss_u,4)) + 
             ', g_loss_s: ' + str(np.round(np.sqrt(step_g_loss_s),4)) + 
             ', g_loss_v: ' + str(np.round(step_g_loss_v,4)) + 
             ', e_loss_t0: ' + str(np.round(np.sqrt(step_e_loss_t0),4))  )
+    if step_g_loss_u<1 and itt>7:
+      print('step: '+ str(itt) + '/' + str(iterations) + 
+            ', d_loss: ' + str(np.round(step_d_loss,4)) + 
+            ', g_loss_u: ' + str(np.round(step_g_loss_u,4)) + 
+            ', g_loss_s: ' + str(np.round(np.sqrt(step_g_loss_s),4)) + 
+            ', g_loss_v: ' + str(np.round(step_g_loss_v,4)) + 
+            ', e_loss_t0: ' + str(np.round(np.sqrt(step_e_loss_t0),4))  )
+      break
+
   print('Finish Joint Training')
-    
+
   ## Synthetic data generation
-  Z_mb = random_generator(no, z_dim, ori_time, max_seq_len)
+  Z_mb = random_generator_with_start(no, z_dim, ori_time, max_seq_len,ori_data)
   generated_data_curr = sess.run(X_hat, feed_dict={Z: Z_mb, X: ori_data, T: ori_time})    
     
   generated_data = list()
@@ -320,5 +305,8 @@ def timegan (ori_data, parameters):
   # Renormalization
   generated_data = generated_data * max_val
   generated_data = generated_data + min_val
-    
-  return generated_data
+  
+  ori_data = ori_data * max_val
+  ori_data = ori_data + min_val
+
+  return generated_data, ori_data

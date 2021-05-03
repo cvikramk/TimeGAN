@@ -26,7 +26,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
+import argparse, random
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
@@ -39,6 +39,12 @@ from data_loading import real_data_loading, sine_data_generation
 from metrics.discriminative_metrics import discriminative_score_metrics
 from metrics.predictive_metrics import predictive_score_metrics
 from metrics.visualization_metrics import visualization
+from AMCParser.amc_parser import parse_asf, parse_amc
+from AMCParser._3Dviewer import Viewer
+
+body_dof_length = {'head': 3, 'lclavicle': 2, 'lfemur': 3, 'lfingers': 1, 'lfoot': 2, 'lhand': 2, 'lhumerus': 3, 'lowerback': 3, 'lowerneck': 3, 'lradius': 1, 'lthumb': 2, 'ltibia': 1, 'ltoes': 1, 'lwrist': 1, 'rclavicle': 2, 'rfemur': 3, 'rfingers': 1, 'rfoot': 2, 'rhand': 2, 'rhumerus': 3, 'root': 6, 'rradius': 1, 'rthumb': 2, 'rtibia': 1, 'rtoes': 1, 'rwrist': 1, 'thorax': 3, 'upperback': 3, 'upperneck': 3}
+
+lower_body_parts = ['lfemur',  'ltibia', 'rfemur', 'rtibia']
 
 
 def main (args):
@@ -61,13 +67,17 @@ def main (args):
     - metric_results: discriminative and predictive scores
   """
   ## Data loading
-  if args.data_name in ['stock', 'energy']:
-    ori_data = real_data_loading(args.data_name, args.seq_len)
+  if args.data_name in ['stock', 'energy','mocap','mocap_strict']:
+    temp_ori_data,min_val,max_val = real_data_loading(args.data_name, args.seq_len)
   elif args.data_name == 'sine':
     # Set number of samples and its dimensions
     no, dim = 10000, 5
     ori_data = sine_data_generation(no, args.seq_len, dim)
-    
+  
+  idx = np.random.permutation(len(temp_ori_data))    
+  ori_data = []
+  for i in range(len(temp_ori_data)):
+    ori_data.append(np.array(temp_ori_data[idx[i]]))
   print(args.data_name + ' dataset is ready.')
     
   ## Synthetic data generation by TimeGAN
@@ -78,38 +88,22 @@ def main (args):
   parameters['num_layer'] = args.num_layer
   parameters['iterations'] = args.iteration
   parameters['batch_size'] = args.batch_size
-      
-  generated_data = timegan(ori_data, parameters)   
+  parameters['seq_len'] = args.seq_len
+  
+  generated_data, ori_data = timegan(ori_data, parameters,min_val,max_val)   
   print('Finish Synthetic Data Generation')
-  
-  ## Performance metrics   
+  # print(generated_data)
+  print(generated_data.shape)
+  # Performance metrics   
   # Output initialization
-  metric_results = dict()
+
   
-  # 1. Discriminative Score
-  discriminative_score = list()
-  for _ in range(args.metric_iteration):
-    temp_disc = discriminative_score_metrics(ori_data, generated_data)
-    discriminative_score.append(temp_disc)
-      
-  metric_results['discriminative'] = np.mean(discriminative_score)
-      
-  # 2. Predictive score
-  predictive_score = list()
-  for tt in range(args.metric_iteration):
-    temp_pred = predictive_score_metrics(ori_data, generated_data)
-    predictive_score.append(temp_pred)   
-      
-  metric_results['predictive'] = np.mean(predictive_score)     
-          
-  # 3. Visualization (PCA and tSNE)
   visualization(ori_data, generated_data, 'pca')
   visualization(ori_data, generated_data, 'tsne')
   
-  ## Print discriminative and predictive scores
-  print(metric_results)
 
-  return ori_data, generated_data, metric_results
+
+  return ori_data, generated_data
 
 
 if __name__ == '__main__':  
@@ -118,7 +112,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument(
       '--data_name',
-      choices=['sine','stock','energy'],
+      choices=['sine','stock','energy','mocap','mocap_strict'],
       default='stock',
       type=str)
   parser.add_argument(
@@ -160,4 +154,27 @@ if __name__ == '__main__':
   args = parser.parse_args() 
   
   # Calls main function  
-  ori_data, generated_data, metrics = main(args)
+  ori_data, generated_data = main(args)
+  asf_path = '02.asf'
+  joints = parse_asf(asf_path)
+  base_root = [  7.86289,  15.8386 , -40.2081 ,   9.03816,  -2.99522,  -3.21388]
+
+
+  while 1:
+    ch = random.choice(range(generated_data.shape[0]))
+    print(ch)
+
+    seqs = generated_data[ch]
+    motion_frames = []
+    for motion in seqs:
+      motion_frame = {}
+      frame_idx = 0
+      for k in lower_body_parts:
+        motion_frame[k]=motion[frame_idx:frame_idx+body_dof_length[k]]
+        frame_idx=frame_idx+body_dof_length[k]
+
+      motion_frame['root']=base_root
+      motion_frames.append(motion_frame)
+
+    v = Viewer(joints, motion_frames)
+    v.run()

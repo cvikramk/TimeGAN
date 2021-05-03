@@ -1,0 +1,79 @@
+# AST/ASF file generated using VICON BodyLanguage
+# -----------------------------------------------
+:version 1.10
+:name VICON
+:units
+  mass 1.0
+  length 0.45
+  angle deg
+:documentation
+   .ast/.asf automatically generated from VICON data using
+   VICON BodyBuilder and BodyLanguage model FoxedUp or BRILLIANT.MOD
+:root
+   order TX TY TZ RX RY RZ
+   axis XYZ
+   position 0 0 0  
+   orientation 0 0 0 
+:bonedata
+  begin
+     id 1 
+     name lhipjoint
+     direction 0.655637 -0.713449 0.247245 
+     length 2.52691 
+     axis 0 0 0  XYZ
+  end
+  begin
+     id 2 
+     name lfemur
+     direction 0.34202 -0.939693 0  
+     length 7.59371  
+     axis 0 0 20  XYZ
+    dof rx ry rz
+    limits (-160.0 20.0)
+           (-70.0 70.0)
+           (-60.0 70.0)
+  end
+  begin
+     id 3 
+     name ltibia
+     direction 0.34202 -0.939693 0   
+     length 7.28717   
+     axis 0 0 20   XYZ
+    dof rx
+    limits (-10.0 170.0)
+  end
+  begin
+     id 6 
+     name rhipjoint
+     direction -0.645062 -0.722004 0.250209   
+     length 2.49697  
+     axis 0 0 0  XYZ 
+  end
+  begin
+     id 7 
+     name rfemur
+     direction -0.34202 -0.939693 0   
+     length 7.58734   
+     axis 0 0 -20   XYZ
+    dof rx ry rz
+    limits (-160.0 20.0)
+           (-70.0 70.0)
+           (-70.0 60.0)
+  end
+  begin
+     id 8 
+     name rtibia
+     direction -0.34202 -0.939693 0   
+     length 7.21538   
+     axis 0 0 -20   XYZ
+    dof rx
+    limits (-10.0 170.0)
+ end
+:hierarchy
+  begin
+    root lhipjoint rhipjoint
+    lhipjoint lfemur
+    lfemur ltibia
+    rhipjoint rfemur
+    rfemur rtibia
+  end
